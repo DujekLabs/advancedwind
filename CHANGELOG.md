@@ -4,6 +4,14 @@ All notable changes to this project will be documented in this file.
 
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 
+## [Unreleased]
+
+### Fixed
+- Plugin no longer crashes at start-up with `ReferenceError: Cannot access 'ATTITUDE_SMOOTHER_KEYS' before initialization` when `navigation.attitude` is delivered synchronously while the attitude handler subscribes (e.g. a cached value on the server) and mast heel or mast movement correction is enabled. The attitude-derivative state (`attLastTime`, `attPrevious`, `MIN_ATT_INTERVAL`, `ATTITUDE_SMOOTHER_KEYS`, `isReadyAndFresh`) is now declared before the attitude handler is created. Moving only `ATTITUDE_SMOOTHER_KEYS` is not enough: the same delta then fails on `isReadyAndFresh`.
+
+### Tests
+- Added start-time race tests for a synchronous attitude delta, with and without pending attitude smoother options.
+
 ## [2.9.5] - 2026-09-17
 
 ### Fixed

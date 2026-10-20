@@ -504,6 +504,29 @@ module.exports = function (app) {
     const shouldSubscribeAttitude = () => !!(options.correctForMastHeel || options.correctForMastMovement);
     const shouldSubscribeLeeway = () => !!options.correctForLeeway;
 
+    // NOTE: these declarations must precede the attitude handler below. A subscription can
+    // deliver navigation.attitude synchronously while createSmoothedHandler() subscribes, so
+    // onDelta may run before the rest of start() has executed (temporal dead zone otherwise).
+    // Compute sensorSpeed exactly once per attitude sample, using the correct deltaT
+    // between consecutive attitude updates. This avoids the problem of calculate()
+    // firing on every wind delta (often with the same attitude value), which would
+    // recompute a near-zero rotation rate and destroy the valid sensorSpeed.
+    //
+    // attLastTime/attPrevious are declared at plugin.start() scope so applyOptionChanges()
+    // can also reset them when the attitude smoother is reconfigured.
+    let attLastTime = null;
+    let attPrevious = null;
+    // Minimum interval between derivative computations (ms).
+    // Attitude messages can arrive in bursts only milliseconds apart; dividing
+    // a small angle change by a near-zero deltaT produces huge spurious velocities.
+    // By requiring at least MIN_ATT_INTERVAL ms we accumulate a reliable window:
+    // attPrevious only advances when we actually compute, so the full angular
+    // change since the last accepted sample is always used.
+    const MIN_ATT_INTERVAL = 50;
+    // Keys that trigger an attitude smoother reset.
+    const ATTITUDE_SMOOTHER_KEYS = ['attitudeSmootherClass', 'attitudeSmootherTau', 'attitudeSmootherTimeSpan', 'attitudeSmootherSteadyState'];
+    const isReadyAndFresh = (input) => !!input && input.ready === true && !input.stale;
+
     //attitude (subscribe only when mast heel or mast movement correction is enabled)
     const attitudeLifecycle = buildLifecycleCallbacks(
       'attitude.smoothed',
@@ -571,25 +594,6 @@ module.exports = function (app) {
     sensorSpeed.configureMagnitude("environment.wind.speedApparent");
     sensorSpeed.configureAngle("environment.wind.angleApparent");
 
-    // Compute sensorSpeed exactly once per attitude sample, using the correct deltaT
-    // between consecutive attitude updates. This avoids the problem of calculate()
-    // firing on every wind delta (often with the same attitude value), which would
-    // recompute a near-zero rotation rate and destroy the valid sensorSpeed.
-    //
-    // attLastTime/attPrevious are declared at plugin.start() scope so applyOptionChanges()
-    // can also reset them when the attitude smoother is reconfigured.
-    let attLastTime = null;
-    let attPrevious = null;
-    // Minimum interval between derivative computations (ms).
-    // Attitude messages can arrive in bursts only milliseconds apart; dividing
-    // a small angle change by a near-zero deltaT produces huge spurious velocities.
-    // By requiring at least MIN_ATT_INTERVAL ms we accumulate a reliable window:
-    // attPrevious only advances when we actually compute, so the full angular
-    // change since the last accepted sample is always used.
-    const MIN_ATT_INTERVAL = 50;
-    // Keys that trigger an attitude smoother reset.
-    const ATTITUDE_SMOOTHER_KEYS = ['attitudeSmootherClass', 'attitudeSmootherTau', 'attitudeSmootherTimeSpan', 'attitudeSmootherSteadyState'];
-    const isReadyAndFresh = (input) => !!input && input.ready === true && !input.stale;
     // Snapshot polars for per-step before/after inspection
     misalignIn = new Polar(app, plugin.id, "misalignIn"); misalignIn.setMeta({ displayName: "Before misalignment", plane: "Boat" });
     misalignOut = new Polar(app, plugin.id, "misalignOut"); misalignOut.setMeta({ displayName: "After misalignment", plane: "Boat" });

@@ -713,12 +713,13 @@ describe('initialization order (subscription race)', () => {
    * for environment.wind.speedApparent/angleApparent, which drives apparentWind's
    * onDelta (and therefore calculate()) before plugin.start() has returned.
    */
-  function createSyncBootstrapShim(pluginOptions = {}) {
+  function createSyncBootstrapShim(pluginOptions = {}, extraBootstrap = {}) {
     const { app: base, cleanup } = createAppShim();
     const subscribers = new Map();
     const bootstrapValues = {
       'environment.wind.speedApparent': 4.0,
       'environment.wind.angleApparent': 0.3,
+      ...extraBootstrap,
     };
 
     const app = new Proxy(base, {
@@ -757,6 +758,36 @@ describe('initialization order (subscription race)', () => {
     try {
       plugin = require('../index.js')(app);
       assert.doesNotThrow(() => plugin.start(), 'plugin.start() must not throw on a synchronous bootstrap delta');
+    } finally {
+      if (plugin) plugin.stop?.();
+      cleanup();
+    }
+  });
+
+  it('does not throw when attitude delivers synchronously during subscribe with mast heel correction enabled', () => {
+    const { app, cleanup } = createSyncBootstrapShim(
+      { correctForMastHeel: true },
+      { 'navigation.attitude': { roll: 0.1, pitch: 0.02, yaw: 1.0 } },
+    );
+    let plugin;
+    try {
+      plugin = require('../index.js')(app);
+      assert.doesNotThrow(() => plugin.start(), 'plugin.start() must not throw on a synchronous attitude delta');
+    } finally {
+      if (plugin) plugin.stop?.();
+      cleanup();
+    }
+  });
+
+  it('does not throw when attitude delivers synchronously while attitude smoother options are pending', () => {
+    const { app, cleanup } = createSyncBootstrapShim(
+      { correctForMastHeel: true, attitudeSmootherTau: 2 },
+      { 'navigation.attitude': { roll: 0.1, pitch: 0.02, yaw: 1.0 } },
+    );
+    let plugin;
+    try {
+      plugin = require('../index.js')(app);
+      assert.doesNotThrow(() => plugin.start(), 'plugin.start() must not throw on a synchronous attitude delta');
     } finally {
       if (plugin) plugin.stop?.();
       cleanup();
